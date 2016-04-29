@@ -17,6 +17,7 @@ struct monetary_and_fiscal_policy
     bool bailout_insolvent_banks;
     double target_growth_rate;
     double minimum_reserve_requirement;
+    double action_lookback;
     bool can_print_money;
     bool can_change_reserve_requirement;
     uint64_t interest_rate_change_timer;
@@ -36,6 +37,7 @@ int main(int argc, char **argv)
     policy.print_money_timer           = 180;
     policy.reserve_change_timer        = 365;
     policy.minimum_reserve_requirement = 0.05;
+    policy.action_lookback             = 0.9995;
 
     std::vector<Bank> banks;
     banks.push_back(Bank(0));
@@ -102,7 +104,14 @@ int main(int argc, char **argv)
             loans[day%30].erase( std::remove( loans[day%30].begin(), loans[day%30].end(), loan), loans[day%30].end());
         }
 
-        for(int transactions = 0; transactions<5; ++transactions)
+        // Companies will try to avoid taking out expensive loans
+        // we will base the transaction frequency on how expensive the loans are
+        double transaction_count = 50.0 / (Bank::GetBaseInterestRate() / 0.01 + 0.001);
+        //printf("rate: %lf transaction_count: %lf\n", Bank::GetBaseInterestRate(), transaction_count);
+        transaction_count = std::min(transaction_count, 1.0);
+        transaction_count = std::max(transaction_count, 25.0);
+        transaction_count = sqrt(transaction_count);
+        for(int transactions = 0; transactions<(int)transaction_count; ++transactions)
         {
             uint32_t from_bank = rand() % banks.size();
             uint32_t to_bank   = rand() % banks.size();
@@ -131,10 +140,10 @@ int main(int argc, char **argv)
         double money_supply = calculate_money_supply(banks);
         double growth_rate  = 365.0 * (money_supply - money_supply_old) / (money_supply_old + 0.0001);
         static double growth_rate_avg = policy.target_growth_rate;
-        static uint64_t rate_timer = 0;
-        static uint64_t print_timer = 0;
-        static uint64_t reserve_timer = 0;
-        growth_rate_avg = 0.01 * growth_rate + 0.99 * growth_rate_avg;
+        static uint64_t rate_timer = 30;
+        static uint64_t print_timer = 30;
+        static uint64_t reserve_timer = 100;
+        growth_rate_avg = (1.0 - policy.action_lookback) * growth_rate + policy.action_lookback * growth_rate_avg;
 
         if(rate_timer > 0) --rate_timer;
         if(print_timer > 0) --print_timer;
@@ -175,7 +184,7 @@ int main(int argc, char **argv)
                 rate_timer = policy.interest_rate_change_timer;
             }
             
-            if(reserve_timer == 0 && policy.target_growth_rate < 0.85 * growth_rate_avg)
+            if(reserve_timer == 0 && (policy.target_growth_rate - growth_rate_avg) > 0.05  )
             {
                 if(Bank::GetReserveRequirement() > policy.minimum_reserve_requirement)
                 {
@@ -189,7 +198,7 @@ int main(int argc, char **argv)
             }
         }
         
-        if(policy.central_reserve_banking && policy.target_growth_rate > growth_rate_avg)
+        if(policy.central_reserve_banking && policy.target_growth_rate + 0.025 > growth_rate_avg)
         {
             if(rate_timer == 0 && Bank::GetBaseInterestRate() < 1.0)
             {
@@ -214,6 +223,9 @@ int main(int argc, char **argv)
     printf("End of simulation:\nMoney Supply: %lf\nHard Assets: %lf\nAsset Ratio: %lf\n",
            money_supply_old, hard_assets, money_supply_old / hard_assets);
     
+    printf("Final interest rate: %lf Final Reserve Requirement: %lf\n",
+           Bank::GetBaseInterestRate(), Bank::GetReserveRequirement());
+
     return 0;
 }
 

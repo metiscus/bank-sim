@@ -5,7 +5,7 @@
 #include <cstdlib>
 
 double Bank::reserve_requirement_ = 0.1;
-double Bank::base_interest_rate_  = 0.045;
+double Bank::base_interest_rate_  = 0.05;
 
 Bank::Bank(double cash_on_hand)
     : cash_on_hand_(cash_on_hand)
