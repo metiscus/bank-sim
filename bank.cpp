@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 double Bank::reserve_requirement_ = 0.1;
 double Bank::base_interest_rate_  = 0.045;
@@ -96,8 +97,10 @@ uint64_t Bank::OpenLoan(double rate, double amount)
     if(CheckWithdrawReserveRequirement(amount))
     {
         double rate_offset = 0.0006 * (1.0 / sqrt(0.001 + ComputeAssetRatio())/ 0.1);
-        printf("asset ratio: %lf rate_offset: %lf\n", ComputeAssetRatio(), rate_offset);
-        auto loan = std::make_shared<Loan>(*this, amount, rate + rate_offset, 6);
+        //printf("asset ratio: %lf rate_offset: %lf\n", ComputeAssetRatio(), rate_offset);
+        uint64_t term = 6 + rand() % 30;
+        
+        auto loan = std::make_shared<Loan>(*this, amount, rate + rate_offset, term);
         uint64_t account_number = account_number_++;
         loans_.insert(std::make_pair(account_number, loan));
         return account_number;

@@ -11,9 +11,32 @@
 #include "loan.h"
 
 double calculate_money_supply(std::vector<Bank>& banks);
+struct monetary_and_fiscal_policy
+{
+    bool central_reserve_banking;
+    bool bailout_insolvent_banks;
+    double target_growth_rate;
+    double minimum_reserve_requirement;
+    bool can_print_money;
+    bool can_change_reserve_requirement;
+    uint64_t interest_rate_change_timer;
+    uint64_t print_money_timer;
+    uint64_t reserve_change_timer;
+};
 
 int main(int argc, char **argv)
 {
+    monetary_and_fiscal_policy policy;
+    policy.central_reserve_banking     = true;
+    policy.bailout_insolvent_banks     = true;
+    policy.can_print_money             = true;
+    policy.can_change_reserve_requirement = true;
+    policy.target_growth_rate          = 0.03;
+    policy.interest_rate_change_timer  = 120;
+    policy.print_money_timer           = 180;
+    policy.reserve_change_timer        = 365;
+    policy.minimum_reserve_requirement = 0.05;
+
     std::vector<Bank> banks;
     banks.push_back(Bank(0));
     banks.push_back(Bank(0));
@@ -21,20 +44,20 @@ int main(int argc, char **argv)
     banks.push_back(Bank(0));
     banks.push_back(Bank(0));
     
-    double starting_hard_assets = 0.0;
     std::vector<uint64_t> accounts;
-    accounts.push_back(banks[0].OpenAccount(Bank::GetBaseInterestRate(), 1e5));
-    accounts.push_back(banks[1].OpenAccount(Bank::GetBaseInterestRate(), 1e5));
+    accounts.push_back(banks[0].OpenAccount(Bank::GetBaseInterestRate(), 1e4));
+    accounts.push_back(banks[1].OpenAccount(Bank::GetBaseInterestRate(), 1e4));
     accounts.push_back(banks[2].OpenAccount(Bank::GetBaseInterestRate(), 1e5));
-    accounts.push_back(banks[3].OpenAccount(Bank::GetBaseInterestRate(), 1e5));
-    accounts.push_back(banks[4].OpenAccount(Bank::GetBaseInterestRate(), 1e5));
+    accounts.push_back(banks[3].OpenAccount(Bank::GetBaseInterestRate(), 1e4));
+    accounts.push_back(banks[4].OpenAccount(Bank::GetBaseInterestRate(), 1e4));
     
     srand(time(0));
     
     //std::vector<LoanPtr> loans;
     std::vector< std::vector<LoanPtr> > loans;
     loans.resize(30);
-    
+
+    double starting_hard_assets = 0.0;    
     for(auto& bank : banks)
     {
         starting_hard_assets += bank.GetCashOnHand();
@@ -45,65 +68,47 @@ int main(int argc, char **argv)
     double money_supply_old = calculate_money_supply(banks);
     for(int day = 0; day<365*20; ++day)
     {
-#if 0
-        double hard_assets_old = 0.0;
-        for(auto bank : banks)
+        // time to pay loans
+        std::vector<LoanPtr> remove_list;
+        for(auto theLoan : loans[day%30])
         {
-            hard_assets_old += bank.GetCashOnHand();
-        }
-#endif
-
-        //if(day % 30 == 0)
-        {
-            std::vector< std::vector<LoanPtr> > newLoans;
-            newLoans.resize(loans.size());
-
-            // time to pay loans
-            for(auto theLoan : loans[day%30])
+            if(theLoan->IsPaidOff())
             {
-                if(theLoan->IsPaidOff())
-                {
-                    continue;
-                }
+                continue;
+            }
 
-                uint32_t from_bank = rand() % banks.size();
-                double withdraw_qty  = theLoan->GetPaymentAmount();
-                double deposit_qty = banks[from_bank].GetAccount(accounts[from_bank])->Withdraw(withdraw_qty);
-                if(fabs(withdraw_qty - deposit_qty) < 0.0001)
-                {
-                    theLoan->MakePayment();
-                }
-                else
-                {
-                    fprintf(stderr, "Couldn't make payment. Returning money.\n");
-                    banks[from_bank].GetAccount(accounts[from_bank])->Deposit(deposit_qty);
-                }
-                
-                if(!theLoan->IsPaidOff())
-                {
-                    newLoans[day%30].push_back(theLoan);
-                }
+            uint32_t from_bank = rand() % banks.size();
+            double withdraw_qty  = theLoan->GetPaymentAmount();
+            double deposit_qty = banks[from_bank].GetAccount(accounts[from_bank])->Withdraw(withdraw_qty);
+            if(fabs(withdraw_qty - deposit_qty) < 0.00001)
+            {
+                theLoan->MakePayment();
+            }
+            else
+            {
+                //fprintf(stderr, "Couldn't make payment. Returning money.\n");
+                banks[from_bank].GetAccount(accounts[from_bank])->Deposit(deposit_qty);
             }
             
-            loans = newLoans;
-        }
-
-        if(0 && day == 3650)
-        {
-            for(auto& bank : banks)
+            if(theLoan->IsPaidOff())
             {
-                bank.DepositCash(1e5);
+//                printf("Loan closed out!\n");
+                remove_list.push_back(theLoan);
             }
         }
-        
 
-        for(int transactions = 0; transactions<25; ++transactions)
+        for(auto loan : remove_list)
+        {
+            loans[day%30].erase( std::remove( loans[day%30].begin(), loans[day%30].end(), loan), loans[day%30].end());
+        }
+
+        for(int transactions = 0; transactions<5; ++transactions)
         {
             uint32_t from_bank = rand() % banks.size();
             uint32_t to_bank   = rand() % banks.size();
 
             // take out a loan and deposit it
-            int64_t loan_size = rand() % 500 + 100.0;
+            int64_t loan_size = (rand() % 5000 + 1000.0);
             uint64_t loan_acct = banks[from_bank].OpenLoan(Bank::GetBaseInterestRate() + 0.025, loan_size);
             if(loan_acct != 0)
             {
@@ -117,25 +122,86 @@ int main(int argc, char **argv)
         {
             bank.Simulate(1);
             
-            printf("\tBank: %d Net Assets: %lf Cash: %lf Ratio: %lf\n", 
-            ++banknum, bank.ComputeNetAssets(), bank.GetCashOnHand(), bank.ComputeAssetRatio());
+//            printf("\tBank: %d Net Assets: %lf Cash: %lf Ratio: %lf\n", 
+//            ++banknum, bank.ComputeNetAssets(), bank.GetCashOnHand(), bank.ComputeAssetRatio());
         }
         
-#if 0
-        double hard_assets = 0.0;
-        for(auto bank : banks)
-        {
-            hard_assets += bank.GetCashOnHand();
-        }         
-        
-        if(fabs(hard_assets-hard_assets_old)> 0.01)
-        {
-            fprintf(stderr, "error: capital growth detected!\n");
-        }
-#endif
+
         
         double money_supply = calculate_money_supply(banks);
-        printf("Day %d money supply: %lf growth rate: %lf\n", day, money_supply, 365.0 * 100.0 * (money_supply - money_supply_old) / money_supply_old);
+        double growth_rate  = 365.0 * (money_supply - money_supply_old) / (money_supply_old + 0.0001);
+        static double growth_rate_avg = policy.target_growth_rate;
+        static uint64_t rate_timer = 0;
+        static uint64_t print_timer = 0;
+        static uint64_t reserve_timer = 0;
+        growth_rate_avg = 0.01 * growth_rate + 0.99 * growth_rate_avg;
+
+        if(rate_timer > 0) --rate_timer;
+        if(print_timer > 0) --print_timer;
+        if(reserve_timer > 0) --reserve_timer;
+        
+        if(policy.central_reserve_banking && policy.target_growth_rate < 0.95 * growth_rate_avg)
+        {
+            // first we need to check if the money supply is constraining growth
+            // if it is, we can make cash infusions to the banks to simulate "printing money"
+            // we use the money multiplier theory to check this
+            double theoretical_money_multiplier = 1.0 / (Bank::GetReserveRequirement());
+
+            // compute the hard assets on hand at all banks
+            double hard_assets = 0.0;
+            for(auto bank : banks)
+            {
+                hard_assets += bank.GetCashOnHand();
+            }
+            
+            double money_multiplier = money_supply / hard_assets;
+            
+            bool need_cash_infusion = (theoretical_money_multiplier - money_multiplier) < 0.05;
+            if(print_timer == 0 && policy.can_print_money && need_cash_infusion)
+            {
+                // We "need" to infuse some money into the economy
+                printf("FED: We need a cash infusion!\n");
+                for(auto& bank : banks)
+                {
+                    bank.DepositCash(20000.0);
+                }
+            }
+            
+            if(rate_timer == 0 && Bank::GetBaseInterestRate() > 0.0)
+            {
+                printf("FED: Cut interest rates!\n");
+                Bank::SetBaseInterestRate(
+                    std::max(0.0, Bank::GetBaseInterestRate() - 0.005));
+                rate_timer = policy.interest_rate_change_timer;
+            }
+            
+            if(reserve_timer == 0 && policy.target_growth_rate < 0.85 * growth_rate_avg)
+            {
+                if(Bank::GetReserveRequirement() > policy.minimum_reserve_requirement)
+                {
+                    printf("FED: Decrease the reserve requirement.\n");
+                    Bank::SetReserveRequirement(
+                            std::max(policy.minimum_reserve_requirement,
+                                     Bank::GetReserveRequirement() - 0.01));
+
+                    reserve_timer = policy.reserve_change_timer;
+                }
+            }
+        }
+        
+        if(policy.central_reserve_banking && policy.target_growth_rate > growth_rate_avg)
+        {
+            if(rate_timer == 0 && Bank::GetBaseInterestRate() < 1.0)
+            {
+                printf("FED: Increase interest rates!\n");
+                Bank::SetBaseInterestRate(
+                    std::min(1.0, Bank::GetBaseInterestRate() + 0.005));
+                rate_timer = policy.interest_rate_change_timer;
+            }           
+        }
+        
+
+        printf("Day %d money supply: %lf growth rate: %lf\n", day, money_supply, growth_rate_avg); //100.0 * (money_supply - money_supply_old) / money_supply_old);
         money_supply_old = money_supply;
 
     }
